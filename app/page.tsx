@@ -111,8 +111,9 @@ export default function HaulYeahLoadCalcApp() {
       if (data.applyTax !== undefined) setApplyTax(data.applyTax);
       if (data.quarries !== undefined) setQuarries(data.quarries);
       if (data.selectedQuarryId !== undefined) setSelectedQuarryId(data.selectedQuarryId);
-      if (data.selectedMaterialId !== undefined)
+      if (data.selectedMaterialId !== undefined) {
         setSelectedMaterialId(data.selectedMaterialId);
+      }
       if (data.priceOverride !== undefined) setPriceOverride(data.priceOverride);
     } catch (error) {
       console.error("Failed to load saved calculator data", error);
@@ -441,8 +442,12 @@ export default function HaulYeahLoadCalcApp() {
           <Card className="mb-4 rounded-3xl border-orange-500/20 bg-zinc-900/80 shadow-2xl shadow-black/20">
             <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
               <div>
-                <div className="text-base font-semibold text-white">Install HaulYeah LoadCalc</div>
-                <div className="text-sm text-zinc-400">Add it to your home screen for a real app feel.</div>
+                <div className="text-base font-semibold text-white">
+                  Install HaulYeah LoadCalc
+                </div>
+                <div className="text-sm text-zinc-400">
+                  Add it to your home screen for a real app feel.
+                </div>
               </div>
               <Button
                 type="button"
@@ -502,6 +507,9 @@ export default function HaulYeahLoadCalcApp() {
                 <div>
                   <Label className="text-zinc-200">Hours</Label>
                   <Input
+                    type="number"
+                    min="0"
+                    step="1"
                     value={hours}
                     onChange={(e) => setHours(e.target.value)}
                     inputMode="numeric"
@@ -512,6 +520,9 @@ export default function HaulYeahLoadCalcApp() {
                 <div>
                   <Label className="text-zinc-200">Minutes</Label>
                   <Input
+                    type="number"
+                    min="0"
+                    step="1"
                     value={minutes}
                     onChange={(e) => setMinutes(e.target.value)}
                     inputMode="numeric"
@@ -610,6 +621,9 @@ export default function HaulYeahLoadCalcApp() {
                   <div>
                     <Label className="text-zinc-200">Tons</Label>
                     <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
                       value={tons}
                       onChange={(e) => setTons(e.target.value)}
                       inputMode="decimal"
@@ -620,6 +634,9 @@ export default function HaulYeahLoadCalcApp() {
                   <div>
                     <Label className="text-zinc-200">Price / Ton</Label>
                     <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
                       value={
                         priceOverride !== ""
                           ? priceOverride
@@ -728,8 +745,12 @@ export default function HaulYeahLoadCalcApp() {
                 <div>
                   <Label className="text-zinc-200">Default Hourly Rate</Label>
                   <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
                     value={hourlyRate}
                     onChange={(e) => setHourlyRate(e.target.value)}
+                    inputMode="decimal"
                     className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
                   />
                 </div>
@@ -737,8 +758,12 @@ export default function HaulYeahLoadCalcApp() {
                 <div>
                   <Label className="text-zinc-200">Default Tax Rate %</Label>
                   <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
                     value={taxRate}
                     onChange={(e) => setTaxRate(e.target.value)}
+                    inputMode="decimal"
                     className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
                   />
                 </div>
@@ -746,8 +771,12 @@ export default function HaulYeahLoadCalcApp() {
                 <div>
                   <Label className="text-zinc-200">Truck Capacity Tons</Label>
                   <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
                     value={truckCapacity}
                     onChange={(e) => setTruckCapacity(e.target.value)}
+                    inputMode="decimal"
                     className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
                   />
                 </div>
@@ -814,12 +843,16 @@ export default function HaulYeahLoadCalcApp() {
                           <div>
                             <Label className="text-zinc-200">Price / Ton</Label>
                             <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
                               value={material.pricePerTon}
                               onChange={(e) =>
                                 updateMaterial(quarry.id, material.id, {
                                   pricePerTon: Number(e.target.value) || 0,
                                 })
                               }
+                              inputMode="decimal"
                               className="mt-2 rounded-2xl border-zinc-700 bg-zinc-900 text-white"
                             />
                           </div>
@@ -869,9 +902,8 @@ export default function HaulYeahLoadCalcApp() {
         </Tabs>
 
         <div className="mt-10 text-center text-xs text-zinc-500">
-          Powered by <span className="text-orange-500 font-semibold">QuoteSnap Tools</span>
+          Powered by <span className="font-semibold text-orange-500">QuoteSnap Tools</span>
         </div>
-
       </div>
     </div>
   );
