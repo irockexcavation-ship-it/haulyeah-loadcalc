@@ -12,6 +12,9 @@ import {
   Expand,
   ArrowLeft,
   Eraser,
+  Save,
+  Archive,
+  FolderOpen,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,6 +51,20 @@ type MaterialLine = {
   priceOverride: string;
 };
 
+type SavedQuote = {
+  id: string;
+  customerName: string;
+  savedAt: string;
+  hoursPerLoad: string;
+  truckCapacity: string;
+  hourlyRate: string;
+  taxRate: string;
+  applyTax: boolean;
+  materialLines: MaterialLine[];
+  grandTotal: number;
+  summary: string;
+};
+
 const initialQuarries: Quarry[] = [
   {
     id: "q1",
@@ -76,7 +93,8 @@ const makeDefaultLine = (): MaterialLine => ({
   priceOverride: "",
 });
 
-const STORAGE_KEY = "haulyeah-loadcalc-data-v2";
+const STORAGE_KEY = "haulyeah-loadcalc-data-v3";
+const ARCHIVE_KEY = "haulyeah-loadcalc-archive-v1";
 const QUICK_TON_OPTIONS = [10, 15, 20, 25, 30];
 
 const money = (value: number) =>
@@ -88,43 +106,58 @@ const money = (value: number) =>
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
+const formatDateTime = (iso: string) => {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+};
+
 export default function HaulYeahLoadCalcApp() {
   const [customerName, setCustomerName] = useState("");
-  const [hourlyRate, setHourlyRate] = useState("125");
-  const [hours, setHours] = useState("1");
-  const [minutes, setMinutes] = useState("30");
+  const [hourlyRate, setHourlyRate] = useState("175");
+  const [hoursPerLoad, setHoursPerLoad] = useState("1.7");
   const [truckCapacity, setTruckCapacity] = useState("10");
   const [taxRate, setTaxRate] = useState("6");
   const [applyTax, setApplyTax] = useState(true);
   const [snapshotMode, setSnapshotMode] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [showInstall, setShowInstall] = useState(false);
 
   const [quarries, setQuarries] = useState<Quarry[]>(initialQuarries);
   const [materialLines, setMaterialLines] = useState<MaterialLine[]>([makeDefaultLine()]);
+  const [savedQuotes, setSavedQuotes] = useState<SavedQuote[]>([]);
 
   const customerInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
 
-    try {
-      const data = JSON.parse(saved);
-
-      if (data.customerName !== undefined) setCustomerName(data.customerName);
-      if (data.hourlyRate !== undefined) setHourlyRate(data.hourlyRate);
-      if (data.hours !== undefined) setHours(data.hours);
-      if (data.minutes !== undefined) setMinutes(data.minutes);
-      if (data.truckCapacity !== undefined) setTruckCapacity(data.truckCapacity);
-      if (data.taxRate !== undefined) setTaxRate(data.taxRate);
-      if (data.applyTax !== undefined) setApplyTax(data.applyTax);
-      if (data.quarries !== undefined) setQuarries(data.quarries);
-      if (Array.isArray(data.materialLines) && data.materialLines.length > 0) {
-        setMaterialLines(data.materialLines);
+        if (data.customerName !== undefined) setCustomerName(data.customerName);
+        if (data.hourlyRate !== undefined) setHourlyRate(data.hourlyRate);
+        if (data.hoursPerLoad !== undefined) setHoursPerLoad(data.hoursPerLoad);
+        if (data.truckCapacity !== undefined) setTruckCapacity(data.truckCapacity);
+        if (data.taxRate !== undefined) setTaxRate(data.taxRate);
+        if (data.applyTax !== undefined) setApplyTax(data.applyTax);
+        if (data.quarries !== undefined) setQuarries(data.quarries);
+        if (Array.isArray(data.materialLines) && data.materialLines.length > 0) {
+          setMaterialLines(data.materialLines);
+        }
+      } catch (error) {
+        console.error("Failed to load calculator data", error);
       }
-    } catch (error) {
-      console.error("Failed to load saved calculator data", error);
+    }
+
+    const archived = localStorage.getItem(ARCHIVE_KEY);
+    if (archived) {
+      try {
+        const data = JSON.parse(archived);
+        if (Array.isArray(data)) setSavedQuotes(data);
+      } catch (error) {
+        console.error("Failed to load archive", error);
+      }
     }
   }, []);
 
@@ -132,8 +165,7 @@ export default function HaulYeahLoadCalcApp() {
     const data = {
       customerName,
       hourlyRate,
-      hours,
-      minutes,
+      hoursPerLoad,
       truckCapacity,
       taxRate,
       applyTax,
@@ -145,8 +177,7 @@ export default function HaulYeahLoadCalcApp() {
   }, [
     customerName,
     hourlyRate,
-    hours,
-    minutes,
+    hoursPerLoad,
     truckCapacity,
     taxRate,
     applyTax,
@@ -155,24 +186,15 @@ export default function HaulYeahLoadCalcApp() {
   ]);
 
   useEffect(() => {
+    localStorage.setItem(ARCHIVE_KEY, JSON.stringify(savedQuotes));
+  }, [savedQuotes]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       customerInputRef.current?.focus();
     }, 150);
 
     return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      setShowInstall(true);
-    };
-
-    window.addEventListener("beforeinstallprompt", handler as EventListener);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", handler as EventListener);
-    };
   }, []);
 
   const addQuarry = () => {
@@ -275,18 +297,9 @@ export default function HaulYeahLoadCalcApp() {
     );
   };
 
-  const handleInstall = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    await deferredPrompt.userChoice;
-    setDeferredPrompt(null);
-    setShowInstall(false);
-  };
-
   const clearForNewCustomer = () => {
     setCustomerName("");
-    setHours("1");
-    setMinutes("30");
+    setHoursPerLoad("1.7");
     setApplyTax(true);
     setSnapshotMode(false);
     setMaterialLines([makeDefaultLine()]);
@@ -298,9 +311,8 @@ export default function HaulYeahLoadCalcApp() {
   const resetSavedData = () => {
     localStorage.removeItem(STORAGE_KEY);
     setCustomerName("");
-    setHourlyRate("125");
-    setHours("1");
-    setMinutes("30");
+    setHourlyRate("175");
+    setHoursPerLoad("1.7");
     setTruckCapacity("10");
     setTaxRate("6");
     setApplyTax(true);
@@ -315,7 +327,8 @@ export default function HaulYeahLoadCalcApp() {
   const lineDetails = useMemo(() => {
     return materialLines.map((line) => {
       const quarry = quarries.find((q) => q.id === line.quarryId) || quarries[0];
-      const material = quarry.materials.find((m) => m.id === line.materialId) || quarry.materials[0];
+      const material =
+        quarry.materials.find((m) => m.id === line.materialId) || quarry.materials[0];
 
       const tonsValue = Number(line.tons) || 0;
       const pricePerTon =
@@ -323,7 +336,6 @@ export default function HaulYeahLoadCalcApp() {
       const lineSubtotal = tonsValue * pricePerTon;
       const lineTaxable = applyTax && (material?.taxable ?? true);
       const lineTax = lineTaxable ? lineSubtotal * ((Number(taxRate) || 0) / 100) : 0;
-      const loads = Number(truckCapacity) > 0 ? Math.ceil(tonsValue / (Number(truckCapacity) || 1)) : 0;
 
       return {
         ...line,
@@ -333,36 +345,34 @@ export default function HaulYeahLoadCalcApp() {
         pricePerTon,
         lineSubtotal: round2(lineSubtotal),
         lineTax: round2(lineTax),
-        loads,
       };
     });
-  }, [materialLines, quarries, applyTax, taxRate, truckCapacity]);
+  }, [materialLines, quarries, applyTax, taxRate]);
 
   const calc = useMemo(() => {
     const rate = Number(hourlyRate) || 0;
-    const h = Number(hours) || 0;
-    const m = Number(minutes) || 0;
-    const totalHours = h + m / 60;
-    const haulBill = rate * totalHours;
-
+    const perLoadHours = Number(hoursPerLoad) || 0;
     const materialSubtotal = lineDetails.reduce((sum, line) => sum + line.lineSubtotal, 0);
     const taxAmount = lineDetails.reduce((sum, line) => sum + line.lineTax, 0);
     const totalTons = lineDetails.reduce((sum, line) => sum + line.tonsValue, 0);
-    const totalLoads = lineDetails.reduce((sum, line) => sum + line.loads, 0);
+    const totalLoads =
+      Number(truckCapacity) > 0
+        ? Math.ceil(totalTons / (Number(truckCapacity) || 1))
+        : 0;
+    const haulPerLoad = perLoadHours * rate;
+    const haulBill = haulPerLoad * totalLoads;
     const grandTotal = haulBill + materialSubtotal + taxAmount;
-    const costPerTon = totalTons > 0 ? grandTotal / totalTons : 0;
 
     return {
-      totalHours: round2(totalHours),
+      haulPerLoad: round2(haulPerLoad),
       haulBill: round2(haulBill),
       materialSubtotal: round2(materialSubtotal),
       taxAmount: round2(taxAmount),
       totalTons: round2(totalTons),
       totalLoads,
       grandTotal: round2(grandTotal),
-      costPerTon: round2(costPerTon),
     };
-  }, [hourlyRate, hours, minutes, lineDetails]);
+  }, [hourlyRate, hoursPerLoad, truckCapacity, lineDetails]);
 
   const snapshotMaterialLines = lineDetails
     .filter((line) => line.tonsValue > 0)
@@ -371,6 +381,45 @@ export default function HaulYeahLoadCalcApp() {
   const snapshotQuarries = Array.from(
     new Set(lineDetails.map((line) => line.quarry?.name).filter(Boolean))
   );
+
+  const buildSummary = () => {
+    const lineText = snapshotMaterialLines.slice(0, 2).join(" + ");
+    const extraCount = snapshotMaterialLines.length - 2;
+    const extraText = extraCount > 0 ? ` + ${extraCount} more` : "";
+    return `${lineText || "No material"}${extraText}`;
+  };
+
+  const saveQuote = () => {
+    const quote: SavedQuote = {
+      id: `quote-${Date.now()}`,
+      customerName: customerName.trim() || "Unnamed Customer",
+      savedAt: new Date().toISOString(),
+      hoursPerLoad,
+      truckCapacity,
+      hourlyRate,
+      taxRate,
+      applyTax,
+      materialLines: materialLines.map((line) => ({ ...line })),
+      grandTotal: calc.grandTotal,
+      summary: buildSummary(),
+    };
+
+    setSavedQuotes((prev) => [quote, ...prev]);
+  };
+
+  const loadQuote = (quote: SavedQuote) => {
+    setCustomerName(quote.customerName);
+    setHoursPerLoad(quote.hoursPerLoad);
+    setTruckCapacity(quote.truckCapacity);
+    setHourlyRate(quote.hourlyRate);
+    setTaxRate(quote.taxRate);
+    setApplyTax(quote.applyTax);
+    setMaterialLines(quote.materialLines.map((line) => ({ ...line })));
+  };
+
+  const deleteQuote = (quoteId: string) => {
+    setSavedQuotes((prev) => prev.filter((q) => q.id !== quoteId));
+  };
 
   const SnapshotCard = ({ fullScreen = false }: { fullScreen?: boolean }) => (
     <div
@@ -477,32 +526,19 @@ export default function HaulYeahLoadCalcApp() {
           </div>
         </div>
 
-        {showInstall && (
-          <Card className="mb-4 rounded-3xl border-orange-500/20 bg-zinc-900/80 shadow-2xl shadow-black/20">
-            <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="text-base font-semibold text-white">Install HaulYeah LoadCalc</div>
-                <div className="text-sm text-zinc-400">Add it to your home screen for a real app feel.</div>
-              </div>
-              <Button
-                type="button"
-                onClick={handleInstall}
-                className="rounded-2xl bg-orange-500 text-black hover:bg-orange-400"
-              >
-                <Expand className="mr-2 h-4 w-4" />
-                Install App
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
         <Tabs defaultValue="calculator" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-2 rounded-2xl bg-zinc-900 text-white">
+          <TabsList className="grid w-full grid-cols-3 rounded-2xl bg-zinc-900 text-white">
             <TabsTrigger
               value="calculator"
               className="rounded-xl text-white data-[state=active]:bg-orange-500 data-[state=active]:text-black"
             >
               Calculator
+            </TabsTrigger>
+            <TabsTrigger
+              value="archive"
+              className="rounded-xl text-white data-[state=active]:bg-orange-500 data-[state=active]:text-black"
+            >
+              Archive
             </TabsTrigger>
             <TabsTrigger
               value="setup"
@@ -516,15 +552,26 @@ export default function HaulYeahLoadCalcApp() {
             <Card className="rounded-3xl border-zinc-800 bg-zinc-900/80 shadow-2xl shadow-black/20">
               <CardHeader className="flex flex-row items-center justify-between space-y-0">
                 <CardTitle className="text-lg text-white">Customer</CardTitle>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={clearForNewCustomer}
-                  className="rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
-                >
-                  <Eraser className="mr-2 h-4 w-4" />
-                  New Customer
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={saveQuote}
+                    className="rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
+                  >
+                    <Save className="mr-2 h-4 w-4" />
+                    Save Quote
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={clearForNewCustomer}
+                    className="rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
+                  >
+                    <Eraser className="mr-2 h-4 w-4" />
+                    New Customer
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <div>
@@ -547,48 +594,65 @@ export default function HaulYeahLoadCalcApp() {
                   Haul
                 </CardTitle>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-zinc-200">Hours</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={hours}
-                    onChange={(e) => setHours(e.target.value)}
-                    inputMode="numeric"
-                    className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
-                  />
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-zinc-200">Hours Per Load</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={hoursPerLoad}
+                      onChange={(e) => setHoursPerLoad(e.target.value)}
+                      inputMode="decimal"
+                      className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-zinc-200">Truck Capacity Tons</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={truckCapacity}
+                      onChange={(e) => setTruckCapacity(e.target.value)}
+                      inputMode="decimal"
+                      className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <Label className="text-zinc-200">Minutes</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={minutes}
-                    onChange={(e) => setMinutes(e.target.value)}
-                    inputMode="numeric"
-                    className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
-                  />
-                </div>
-
-                <div className="col-span-2 text-sm text-zinc-400">
+                <div className="text-sm text-zinc-400">
                   Using saved haul rate:{" "}
                   <span className="text-zinc-200">{money(Number(hourlyRate) || 0)}/hr</span>
                 </div>
 
-                <div className="col-span-2 rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                  <div className="text-sm text-zinc-400">Haul Bill</div>
-                  <div className="mt-1 text-3xl font-bold text-orange-500">{money(calc.haulBill)}</div>
+                <div className="grid grid-cols-2 gap-3 text-sm text-zinc-300">
+                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
+                    <div className="text-zinc-400">Total Loads</div>
+                    <div className="mt-1 text-xl font-semibold">{calc.totalLoads}</div>
+                  </div>
+
+                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
+                    <div className="text-zinc-400">Haul Per Load</div>
+                    <div className="mt-1 text-xl font-semibold">{money(calc.haulPerLoad)}</div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
+                  <div className="text-sm text-zinc-400">Total Haul Bill</div>
+                  <div className="mt-1 text-3xl font-bold text-orange-500">
+                    {money(calc.haulBill)}
+                  </div>
                 </div>
               </CardContent>
             </Card>
 
             {materialLines.map((line, index) => {
               const quarry = quarries.find((q) => q.id === line.quarryId) || quarries[0];
-              const material = quarry.materials.find((m) => m.id === line.materialId) || quarry.materials[0];
+              const material =
+                quarry.materials.find((m) => m.id === line.materialId) || quarry.materials[0];
 
               return (
                 <Card
@@ -699,7 +763,11 @@ export default function HaulYeahLoadCalcApp() {
                           type="number"
                           min="0"
                           step="0.01"
-                          value={line.priceOverride !== "" ? line.priceOverride : String(material?.pricePerTon ?? 0)}
+                          value={
+                            line.priceOverride !== ""
+                              ? line.priceOverride
+                              : String(material?.pricePerTon ?? 0)
+                          }
                           onChange={(e) =>
                             updateMaterialLine(line.id, { priceOverride: e.target.value })
                           }
@@ -747,7 +815,9 @@ export default function HaulYeahLoadCalcApp() {
                 <div className="flex items-center justify-between rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
                   <div>
                     <Label className="text-base text-zinc-200">Apply Sales Tax</Label>
-                    <p className="text-sm text-zinc-400">Using saved tax rate: {taxRate}%</p>
+                    <p className="text-sm text-zinc-400">
+                      Using saved tax rate: {taxRate}%
+                    </p>
                   </div>
                   <Switch checked={applyTax} onCheckedChange={setApplyTax} />
                 </div>
@@ -759,27 +829,29 @@ export default function HaulYeahLoadCalcApp() {
                   </div>
 
                   <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                    <div className="text-zinc-400">Cost / Ton</div>
-                    <div className="mt-1 text-xl font-semibold">{money(calc.costPerTon)}</div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-sm text-zinc-300">
-                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                    <div className="text-zinc-400">Haul Bill</div>
-                    <div className="mt-1 text-xl font-semibold">{money(calc.haulBill)}</div>
-                  </div>
-
-                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                    <div className="text-zinc-400">Material Subtotal</div>
-                    <div className="mt-1 text-xl font-semibold">{money(calc.materialSubtotal)}</div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-sm text-zinc-300">
-                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
                     <div className="text-zinc-400">Total Tons</div>
                     <div className="mt-1 text-xl font-semibold">{calc.totalTons}</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-sm text-zinc-300">
+                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
+                    <div className="text-zinc-400">Haul Per Load</div>
+                    <div className="mt-1 text-xl font-semibold">{money(calc.haulPerLoad)}</div>
+                  </div>
+
+                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
+                    <div className="text-zinc-400">Total Haul Bill</div>
+                    <div className="mt-1 text-xl font-semibold">{money(calc.haulBill)}</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-sm text-zinc-300">
+                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
+                    <div className="text-zinc-400">Material Subtotal</div>
+                    <div className="mt-1 text-xl font-semibold">
+                      {money(calc.materialSubtotal)}
+                    </div>
                   </div>
 
                   <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
@@ -790,7 +862,9 @@ export default function HaulYeahLoadCalcApp() {
 
                 <div className="rounded-3xl bg-gradient-to-br from-orange-500 to-orange-600 p-5 text-black shadow-xl">
                   <div className="text-sm font-medium opacity-80">Delivered Price Quote</div>
-                  <div className="mt-1 text-4xl font-black tracking-tight">{money(calc.grandTotal)}</div>
+                  <div className="mt-1 text-4xl font-black tracking-tight">
+                    {money(calc.grandTotal)}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -799,7 +873,9 @@ export default function HaulYeahLoadCalcApp() {
               <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:space-y-0">
                 <div>
                   <CardTitle className="text-lg text-white">Customer Snapshot</CardTitle>
-                  <p className="text-sm text-zinc-400">Open the clean view for an easy screenshot.</p>
+                  <p className="text-sm text-zinc-400">
+                    Open the clean view for an easy screenshot.
+                  </p>
                 </div>
                 <Button
                   type="button"
@@ -812,6 +888,71 @@ export default function HaulYeahLoadCalcApp() {
               </CardHeader>
               <CardContent>
                 <SnapshotCard />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="archive" className="space-y-4">
+            <Card className="rounded-3xl border-zinc-800 bg-zinc-900/80 shadow-2xl shadow-black/20">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg text-white">
+                  <Archive className="h-5 w-5 text-orange-500" />
+                  Saved Quotes
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {savedQuotes.length === 0 ? (
+                  <div className="rounded-2xl bg-zinc-950 p-4 text-sm text-zinc-400 ring-1 ring-zinc-800">
+                    No saved quotes yet.
+                  </div>
+                ) : (
+                  savedQuotes.map((quote) => (
+                    <div
+                      key={quote.id}
+                      className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"
+                    >
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <div className="text-lg font-semibold text-white">
+                            {quote.customerName}
+                          </div>
+                          <div className="text-sm text-zinc-400">
+                            {quote.summary}
+                          </div>
+                          <div className="mt-1 text-xs text-zinc-500">
+                            Saved {formatDateTime(quote.savedAt)}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-2 md:items-end">
+                          <div className="text-xl font-bold text-orange-500">
+                            {money(quote.grandTotal)}
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => loadQuote(quote)}
+                              className="rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
+                            >
+                              <FolderOpen className="mr-2 h-4 w-4" />
+                              Load
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => deleteQuote(quote.id)}
+                              className="rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </CardContent>
             </Card>
           </TabsContent>
