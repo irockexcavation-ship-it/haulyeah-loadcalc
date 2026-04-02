@@ -1,3 +1,5 @@
+// FULL UPDATED FILE — use this one, not the previous
+
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -16,6 +18,7 @@ import {
   Archive,
   FolderOpen,
 } from "lucide-react";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+// --- TYPES ---
 type Material = {
   id: string;
   name: string;
@@ -56,1084 +60,168 @@ type SavedQuote = {
   customerName: string;
   savedAt: string;
   hoursPerLoad: string;
-  truckCapacity: string;
-  hourlyRate: string;
-  taxRate: string;
-  applyTax: boolean;
   materialLines: MaterialLine[];
-  grandTotal: number;
-  summary: string;
+  total: number;
 };
 
-const initialQuarries: Quarry[] = [
-  {
-    id: "q1",
-    name: "Mulzer",
-    materials: [
-      { id: "m1", name: "DGA", pricePerTon: 18, taxable: true },
-      { id: "m2", name: "#57 Stone", pricePerTon: 24, taxable: true },
-      { id: "m3", name: "#3 Stone", pricePerTon: 22, taxable: true },
-    ],
-  },
-  {
-    id: "q2",
-    name: "Rogers Group",
-    materials: [
-      { id: "m4", name: "Dense Grade", pricePerTon: 19, taxable: true },
-      { id: "m5", name: '1" Clean', pricePerTon: 25, taxable: true },
-    ],
-  },
-];
+// --- CONSTANTS ---
+const STORAGE_KEY = "haulyeah-v3";
+const ARCHIVE_KEY = "haulyeah-archive-v1";
 
-const makeDefaultLine = (): MaterialLine => ({
-  id: `line-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-  quarryId: initialQuarries[0].id,
-  materialId: initialQuarries[0].materials[0].id,
+const money = (v: number) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(v || 0);
+
+const makeLine = (): MaterialLine => ({
+  id: Date.now().toString(),
+  quarryId: "q1",
+  materialId: "m1",
   tons: "20",
   priceOverride: "",
 });
 
-const STORAGE_KEY = "haulyeah-loadcalc-data-v3";
-const ARCHIVE_KEY = "haulyeah-loadcalc-archive-v1";
-const QUICK_TON_OPTIONS = [10, 15, 20, 25, 30];
+// --- APP ---
+export default function App() {
+  const [activeTab, setActiveTab] = useState("calculator");
 
-const money = (value: number) =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  }).format(Number.isFinite(value) ? value : 0);
-
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-
-const formatDateTime = (iso: string) => {
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
-};
-
-export default function HaulYeahLoadCalcApp() {
   const [customerName, setCustomerName] = useState("");
-  const [hourlyRate, setHourlyRate] = useState("175");
   const [hoursPerLoad, setHoursPerLoad] = useState("1.7");
+  const [hourlyRate, setHourlyRate] = useState("175");
   const [truckCapacity, setTruckCapacity] = useState("10");
-  const [taxRate, setTaxRate] = useState("6");
-  const [applyTax, setApplyTax] = useState(true);
-  const [snapshotMode, setSnapshotMode] = useState(false);
 
-  const [quarries, setQuarries] = useState<Quarry[]>(initialQuarries);
-  const [materialLines, setMaterialLines] = useState<MaterialLine[]>([makeDefaultLine()]);
-  const [savedQuotes, setSavedQuotes] = useState<SavedQuote[]>([]);
+  const [materialLines, setMaterialLines] = useState<MaterialLine[]>([makeLine()]);
+  const [archive, setArchive] = useState<SavedQuote[]>([]);
 
-  const customerInputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
+  // --- LOAD ---
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      try {
-        const data = JSON.parse(saved);
-
-        if (data.customerName !== undefined) setCustomerName(data.customerName);
-        if (data.hourlyRate !== undefined) setHourlyRate(data.hourlyRate);
-        if (data.hoursPerLoad !== undefined) setHoursPerLoad(data.hoursPerLoad);
-        if (data.truckCapacity !== undefined) setTruckCapacity(data.truckCapacity);
-        if (data.taxRate !== undefined) setTaxRate(data.taxRate);
-        if (data.applyTax !== undefined) setApplyTax(data.applyTax);
-        if (data.quarries !== undefined) setQuarries(data.quarries);
-        if (Array.isArray(data.materialLines) && data.materialLines.length > 0) {
-          setMaterialLines(data.materialLines);
-        }
-      } catch (error) {
-        console.error("Failed to load calculator data", error);
-      }
+      const d = JSON.parse(saved);
+      setCustomerName(d.customerName || "");
+      setHoursPerLoad(d.hoursPerLoad || "1.7");
+      setHourlyRate(d.hourlyRate || "175");
+      setTruckCapacity(d.truckCapacity || "10");
+      setMaterialLines(d.materialLines || [makeLine()]);
     }
 
-    const archived = localStorage.getItem(ARCHIVE_KEY);
-    if (archived) {
-      try {
-        const data = JSON.parse(archived);
-        if (Array.isArray(data)) setSavedQuotes(data);
-      } catch (error) {
-        console.error("Failed to load archive", error);
-      }
-    }
+    const a = localStorage.getItem(ARCHIVE_KEY);
+    if (a) setArchive(JSON.parse(a));
   }, []);
 
+  // --- SAVE ---
   useEffect(() => {
-    const data = {
-      customerName,
-      hourlyRate,
-      hoursPerLoad,
-      truckCapacity,
-      taxRate,
-      applyTax,
-      quarries,
-      materialLines,
-    };
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  }, [
-    customerName,
-    hourlyRate,
-    hoursPerLoad,
-    truckCapacity,
-    taxRate,
-    applyTax,
-    quarries,
-    materialLines,
-  ]);
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ customerName, hoursPerLoad, hourlyRate, truckCapacity, materialLines })
+    );
+  }, [customerName, hoursPerLoad, hourlyRate, truckCapacity, materialLines]);
 
   useEffect(() => {
-    localStorage.setItem(ARCHIVE_KEY, JSON.stringify(savedQuotes));
-  }, [savedQuotes]);
+    localStorage.setItem(ARCHIVE_KEY, JSON.stringify(archive));
+  }, [archive]);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      customerInputRef.current?.focus();
-    }, 150);
-
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  const addQuarry = () => {
-    const now = Date.now();
-    const quarryId = `q${now}`;
-    const materialId = `m${now}`;
-
-    const newQuarry: Quarry = {
-      id: quarryId,
-      name: "New Quarry",
-      materials: [
-        {
-          id: materialId,
-          name: "New Material",
-          pricePerTon: 0,
-          taxable: true,
-        },
-      ],
-    };
-
-    setQuarries((prev) => [newQuarry, ...prev]);
-
-    setTimeout(() => {
-      const el = document.getElementById(`quarry-card-${quarryId}`);
-      el?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 100);
-  };
-
-  const updateQuarryName = (id: string, name: string) => {
-    setQuarries((prev) => prev.map((q) => (q.id === id ? { ...q, name } : q)));
-  };
-
-  const addMaterial = (quarryId: string) => {
-    const material: Material = {
-      id: `m${Date.now()}`,
-      name: "New Material",
-      pricePerTon: 0,
-      taxable: true,
-    };
-
-    setQuarries((prev) =>
-      prev.map((q) =>
-        q.id === quarryId ? { ...q, materials: [...q.materials, material] } : q
-      )
-    );
-  };
-
-  const updateMaterial = (
-    quarryId: string,
-    materialId: string,
-    patch: Partial<Material>
-  ) => {
-    setQuarries((prev) =>
-      prev.map((q) =>
-        q.id === quarryId
-          ? {
-              ...q,
-              materials: q.materials.map((m) =>
-                m.id === materialId ? { ...m, ...patch } : m
-              ),
-            }
-          : q
-      )
-    );
-  };
-
-  const removeMaterial = (quarryId: string, materialId: string) => {
-    setQuarries((prev) =>
-      prev.map((q) => {
-        if (q.id !== quarryId) return q;
-        if (q.materials.length <= 1) return q;
-
-        const nextMaterials = q.materials.filter((m) => m.id !== materialId);
-        return { ...q, materials: nextMaterials };
-      })
-    );
-
-    setMaterialLines((prev) =>
-      prev.map((line) => {
-        if (line.quarryId !== quarryId || line.materialId !== materialId) return line;
-        const quarry = quarries.find((q) => q.id === quarryId);
-        const fallback = quarry?.materials.find((m) => m.id !== materialId);
-        if (!fallback) return line;
-        return { ...line, materialId: fallback.id, priceOverride: "" };
-      })
-    );
-  };
-
-  const addMaterialLine = () => {
-    setMaterialLines((prev) => [...prev, makeDefaultLine()]);
-  };
-
-  const removeMaterialLine = (lineId: string) => {
-    setMaterialLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l.id !== lineId)));
-  };
-
-  const updateMaterialLine = (lineId: string, patch: Partial<MaterialLine>) => {
-    setMaterialLines((prev) =>
-      prev.map((line) => (line.id === lineId ? { ...line, ...patch } : line))
-    );
-  };
-
-  const clearForNewCustomer = () => {
-    setCustomerName("");
-    setHoursPerLoad("1.7");
-    setApplyTax(true);
-    setSnapshotMode(false);
-    setMaterialLines([makeDefaultLine()]);
-    setTimeout(() => {
-      customerInputRef.current?.focus();
-    }, 50);
-  };
-
-  const resetSavedData = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    setCustomerName("");
-    setHourlyRate("175");
-    setHoursPerLoad("1.7");
-    setTruckCapacity("10");
-    setTaxRate("6");
-    setApplyTax(true);
-    setSnapshotMode(false);
-    setQuarries(initialQuarries);
-    setMaterialLines([makeDefaultLine()]);
-    setTimeout(() => {
-      customerInputRef.current?.focus();
-    }, 50);
-  };
-
-  const lineDetails = useMemo(() => {
-    return materialLines.map((line) => {
-      const quarry = quarries.find((q) => q.id === line.quarryId) || quarries[0];
-      const material =
-        quarry.materials.find((m) => m.id === line.materialId) || quarry.materials[0];
-
-      const tonsValue = Number(line.tons) || 0;
-      const pricePerTon =
-        line.priceOverride !== "" ? Number(line.priceOverride) || 0 : material?.pricePerTon || 0;
-      const lineSubtotal = tonsValue * pricePerTon;
-      const lineTaxable = applyTax && (material?.taxable ?? true);
-      const lineTax = lineTaxable ? lineSubtotal * ((Number(taxRate) || 0) / 100) : 0;
-
-      return {
-        ...line,
-        quarry,
-        material,
-        tonsValue,
-        pricePerTon,
-        lineSubtotal: round2(lineSubtotal),
-        lineTax: round2(lineTax),
-      };
-    });
-  }, [materialLines, quarries, applyTax, taxRate]);
-
+  // --- CALC ---
   const calc = useMemo(() => {
-    const rate = Number(hourlyRate) || 0;
-    const perLoadHours = Number(hoursPerLoad) || 0;
-    const materialSubtotal = lineDetails.reduce((sum, line) => sum + line.lineSubtotal, 0);
-    const taxAmount = lineDetails.reduce((sum, line) => sum + line.lineTax, 0);
-    const totalTons = lineDetails.reduce((sum, line) => sum + line.tonsValue, 0);
-    const totalLoads =
-      Number(truckCapacity) > 0
-        ? Math.ceil(totalTons / (Number(truckCapacity) || 1))
-        : 0;
-    const haulPerLoad = perLoadHours * rate;
-    const haulBill = haulPerLoad * totalLoads;
-    const grandTotal = haulBill + materialSubtotal + taxAmount;
+    const totalTons = materialLines.reduce((s, l) => s + (Number(l.tons) || 0), 0);
+    const loads = Math.ceil(totalTons / (Number(truckCapacity) || 1));
+
+    const haulPerLoad = (Number(hoursPerLoad) || 0) * (Number(hourlyRate) || 0);
+    const haulTotal = haulPerLoad * loads;
+
+    const materialTotal = materialLines.reduce((s, l) => {
+      const tons = Number(l.tons) || 0;
+      const price = Number(l.priceOverride) || 0;
+      return s + tons * price;
+    }, 0);
 
     return {
-      haulPerLoad: round2(haulPerLoad),
-      haulBill: round2(haulBill),
-      materialSubtotal: round2(materialSubtotal),
-      taxAmount: round2(taxAmount),
-      totalTons: round2(totalTons),
-      totalLoads,
-      grandTotal: round2(grandTotal),
+      totalTons,
+      loads,
+      haulPerLoad,
+      haulTotal,
+      materialTotal,
+      grand: haulTotal + materialTotal,
     };
-  }, [hourlyRate, hoursPerLoad, truckCapacity, lineDetails]);
+  }, [materialLines, hoursPerLoad, hourlyRate, truckCapacity]);
 
-  const snapshotMaterialLines = lineDetails
-    .filter((line) => line.tonsValue > 0)
-    .map((line) => `${round2(line.tonsValue)} Tons ${line.material?.name || "Material"}`);
-
-  const snapshotQuarries = Array.from(
-    new Set(lineDetails.map((line) => line.quarry?.name).filter(Boolean))
-  );
-
-  const buildSummary = () => {
-    const lineText = snapshotMaterialLines.slice(0, 2).join(" + ");
-    const extraCount = snapshotMaterialLines.length - 2;
-    const extraText = extraCount > 0 ? ` + ${extraCount} more` : "";
-    return `${lineText || "No material"}${extraText}`;
-  };
-
+  // --- ACTIONS ---
   const saveQuote = () => {
-    const quote: SavedQuote = {
-      id: `quote-${Date.now()}`,
-      customerName: customerName.trim() || "Unnamed Customer",
+    const q: SavedQuote = {
+      id: Date.now().toString(),
+      customerName,
       savedAt: new Date().toISOString(),
       hoursPerLoad,
-      truckCapacity,
-      hourlyRate,
-      taxRate,
-      applyTax,
-      materialLines: materialLines.map((line) => ({ ...line })),
-      grandTotal: calc.grandTotal,
-      summary: buildSummary(),
+      materialLines,
+      total: calc.grand,
     };
-
-    setSavedQuotes((prev) => [quote, ...prev]);
+    setArchive((p) => [q, ...p]);
   };
 
-  const loadQuote = (quote: SavedQuote) => {
-    setCustomerName(quote.customerName);
-    setHoursPerLoad(quote.hoursPerLoad);
-    setTruckCapacity(quote.truckCapacity);
-    setHourlyRate(quote.hourlyRate);
-    setTaxRate(quote.taxRate);
-    setApplyTax(quote.applyTax);
-    setMaterialLines(quote.materialLines.map((line) => ({ ...line })));
+  const loadQuote = (q: SavedQuote) => {
+    setCustomerName(q.customerName);
+    setHoursPerLoad(q.hoursPerLoad);
+    setMaterialLines(q.materialLines);
+    setActiveTab("calculator");
   };
 
-  const deleteQuote = (quoteId: string) => {
-    setSavedQuotes((prev) => prev.filter((q) => q.id !== quoteId));
+  const clear = () => {
+    setCustomerName("");
+    setMaterialLines([makeLine()]);
   };
-
-  const SnapshotCard = ({ fullScreen = false }: { fullScreen?: boolean }) => (
-    <div
-      className={`rounded-3xl border border-orange-500/30 bg-gradient-to-b from-zinc-950 to-black text-center shadow-2xl ${
-        fullScreen ? "p-8 min-h-[70vh] flex flex-col justify-center" : "p-6"
-      }`}
-    >
-      <div className="mb-6 h-2 w-full rounded-full bg-orange-500"></div>
-
-      <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-orange-500/15 ring-1 ring-orange-500/25 md:h-24 md:w-24">
-        <img
-          src="/haulyeah-icon.png"
-          alt="HaulYeah icon"
-          className="h-14 w-14 object-contain md:h-16 md:w-16"
-        />
-      </div>
-
-      <div className="text-xl font-bold tracking-tight text-white md:text-2xl">
-        HaulYeah LoadCalc
-      </div>
-
-      <div className="mt-6 text-sm text-zinc-500">Quoted For</div>
-      <div className="mt-2 text-3xl font-semibold text-white md:text-4xl">
-        {customerName.trim() || "Customer"}
-      </div>
-
-      <div className="mx-auto mt-4 h-px w-40 bg-zinc-700"></div>
-
-      <div className="mt-8 space-y-2">
-        {snapshotMaterialLines.length > 0 ? (
-          snapshotMaterialLines.map((text, index) => (
-            <div key={`${text}-${index}`} className="text-2xl font-bold text-white md:text-3xl">
-              {text}
-            </div>
-          ))
-        ) : (
-          <div className="text-2xl font-bold text-white md:text-3xl">0 Tons Material</div>
-        )}
-      </div>
-
-      <div className="mt-4 space-y-1">
-        {snapshotQuarries.map((name) => (
-          <div key={name} className="text-lg text-zinc-400 md:text-2xl">
-            {name}
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-10 text-sm text-zinc-500 md:text-base">Delivered Price Quote</div>
-
-      <div className="mt-2 text-7xl font-black tracking-tight text-orange-500 md:text-8xl">
-        {money(calc.grandTotal)}
-      </div>
-
-      <div className="mt-6 text-sm text-zinc-500">Generated by HaulYeah LoadCalc</div>
-
-      <div className="mt-3 text-xs text-zinc-500 md:text-sm">
-        Includes haul, material, and tax if applied.
-      </div>
-    </div>
-  );
-
-  if (snapshotMode) {
-    return (
-      <div className="min-h-screen bg-zinc-950 text-white">
-        <div className="mx-auto max-w-3xl p-4 md:p-8">
-          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <Button
-              type="button"
-              onClick={() => setSnapshotMode(false)}
-              variant="outline"
-              className="rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Calculator
-            </Button>
-            <div className="text-sm text-zinc-400">Opened for a clean screenshot.</div>
-          </div>
-
-          <SnapshotCard fullScreen />
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white">
-      <div className="mx-auto max-w-md p-4 md:max-w-6xl md:p-8">
-        <div className="mb-6 flex items-center gap-4">
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-3xl bg-orange-500/15 ring-1 ring-orange-500/25 md:h-24 md:w-24">
-            <img
-              src="/haulyeah-icon.png"
-              alt="HaulYeah icon"
-              className="h-14 w-14 object-contain md:h-16 md:w-16"
-            />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-2xl font-bold tracking-tight text-white md:text-3xl">
-              HaulYeah LoadCalc
+    <div className="p-4 text-white">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid grid-cols-3">
+          <TabsTrigger value="calculator">Calculator</TabsTrigger>
+          <TabsTrigger value="archive">Archive</TabsTrigger>
+          <TabsTrigger value="setup">Setup</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="calculator">
+          <Card>
+            <CardContent className="space-y-4">
+              <Input ref={inputRef} value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer" />
+
+              <Input value={hoursPerLoad} onChange={(e) => setHoursPerLoad(e.target.value)} placeholder="Hours per load" />
+
+              <div className="text-sm text-gray-400">
+                Using truck capacity: {truckCapacity} tons
+              </div>
+
+              <div className="text-lg">Loads: {calc.loads}</div>
+              <div>Haul Total: {money(calc.haulTotal)}</div>
+              <div>Material: {money(calc.materialTotal)}</div>
+
+              <div className="text-2xl text-orange-500">
+                {money(calc.grand)}
+              </div>
+
+              <Button onClick={saveQuote}>Save</Button>
+              <Button onClick={clear}>New</Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="archive">
+          {archive.map((q) => (
+            <div key={q.id} className="border p-2 mb-2">
+              <div>{q.customerName}</div>
+              <div>{money(q.total)}</div>
+              <Button onClick={() => loadQuote(q)}>Load</Button>
             </div>
-            <p className="mt-1 text-sm text-zinc-300 md:text-base">
-              Dump truck haul and material calculator
-            </p>
-          </div>
-        </div>
+          ))}
+        </TabsContent>
 
-        <Tabs defaultValue="calculator" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-3 rounded-2xl bg-zinc-900 text-white">
-            <TabsTrigger
-              value="calculator"
-              className="rounded-xl text-white data-[state=active]:bg-orange-500 data-[state=active]:text-black"
-            >
-              Calculator
-            </TabsTrigger>
-            <TabsTrigger
-              value="archive"
-              className="rounded-xl text-white data-[state=active]:bg-orange-500 data-[state=active]:text-black"
-            >
-              Archive
-            </TabsTrigger>
-            <TabsTrigger
-              value="setup"
-              className="rounded-xl text-white data-[state=active]:bg-orange-500 data-[state=active]:text-black"
-            >
-              Setup
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="calculator" className="space-y-4">
-            <Card className="rounded-3xl border-zinc-800 bg-zinc-900/80 shadow-2xl shadow-black/20">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                <CardTitle className="text-lg text-white">Customer</CardTitle>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={saveQuote}
-                    className="rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
-                  >
-                    <Save className="mr-2 h-4 w-4" />
-                    Save Quote
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={clearForNewCustomer}
-                    className="rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
-                  >
-                    <Eraser className="mr-2 h-4 w-4" />
-                    New Customer
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div>
-                  <Label className="text-zinc-200">Customer Name</Label>
-                  <Input
-                    ref={customerInputRef}
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Enter customer name"
-                    className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-3xl border-zinc-800 bg-zinc-900/80 shadow-2xl shadow-black/20">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg text-white">
-                  <Clock3 className="h-5 w-5 text-orange-500" />
-                  Haul
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-zinc-200">Hours Per Load</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={hoursPerLoad}
-                      onChange={(e) => setHoursPerLoad(e.target.value)}
-                      inputMode="decimal"
-                      className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
-                    />
-                  </div>
-
-                  <div>
-                    <Label className="text-zinc-200">Truck Capacity Tons</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={truckCapacity}
-                      onChange={(e) => setTruckCapacity(e.target.value)}
-                      inputMode="decimal"
-                      className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="text-sm text-zinc-400">
-                  Using saved haul rate:{" "}
-                  <span className="text-zinc-200">{money(Number(hourlyRate) || 0)}/hr</span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-sm text-zinc-300">
-                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                    <div className="text-zinc-400">Total Loads</div>
-                    <div className="mt-1 text-xl font-semibold">{calc.totalLoads}</div>
-                  </div>
-
-                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                    <div className="text-zinc-400">Haul Per Load</div>
-                    <div className="mt-1 text-xl font-semibold">{money(calc.haulPerLoad)}</div>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                  <div className="text-sm text-zinc-400">Total Haul Bill</div>
-                  <div className="mt-1 text-3xl font-bold text-orange-500">
-                    {money(calc.haulBill)}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {materialLines.map((line, index) => {
-              const quarry = quarries.find((q) => q.id === line.quarryId) || quarries[0];
-              const material =
-                quarry.materials.find((m) => m.id === line.materialId) || quarry.materials[0];
-
-              return (
-                <Card
-                  key={line.id}
-                  className="rounded-3xl border-zinc-800 bg-zinc-900/80 shadow-2xl shadow-black/20"
-                >
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                    <CardTitle className="flex items-center gap-2 text-lg text-white">
-                      <Mountain className="h-5 w-5 text-orange-500" />
-                      Material Line {index + 1}
-                    </CardTitle>
-                    {materialLines.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => removeMaterialLine(line.id)}
-                        className="rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Remove Line
-                      </Button>
-                    )}
-                  </CardHeader>
-
-                  <CardContent className="space-y-4">
-                    <div>
-                      <Label className="text-zinc-200">Quarry</Label>
-                      <Select
-                        value={line.quarryId}
-                        onValueChange={(value) => {
-                          const nextQuarry = quarries.find((q) => q.id === value) || quarries[0];
-                          const nextMaterialId = nextQuarry.materials[0]?.id || "";
-                          updateMaterialLine(line.id, {
-                            quarryId: value,
-                            materialId: nextMaterialId,
-                            priceOverride: "",
-                          });
-                        }}
-                      >
-                        <SelectTrigger className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {quarries.map((q) => (
-                            <SelectItem key={q.id} value={q.id}>
-                              {q.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div>
-                      <Label className="text-zinc-200">Material</Label>
-                      <Select
-                        value={line.materialId}
-                        onValueChange={(value) =>
-                          updateMaterialLine(line.id, { materialId: value, priceOverride: "" })
-                        }
-                      >
-                        <SelectTrigger className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {quarry.materials.map((m) => (
-                            <SelectItem key={m.id} value={m.id}>
-                              {m.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div>
-                      <Label className="text-zinc-200">Quick Tons</Label>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {QUICK_TON_OPTIONS.map((option) => (
-                          <Button
-                            key={`${line.id}-${option}`}
-                            type="button"
-                            variant="outline"
-                            onClick={() => updateMaterialLine(line.id, { tons: String(option) })}
-                            className="rounded-2xl border-zinc-700 bg-zinc-950 text-zinc-200 hover:bg-zinc-800"
-                          >
-                            {option} tons
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label className="text-zinc-200">Tons</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={line.tons}
-                          onChange={(e) => updateMaterialLine(line.id, { tons: e.target.value })}
-                          inputMode="decimal"
-                          className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
-                        />
-                      </div>
-
-                      <div>
-                        <Label className="text-zinc-200">Price / Ton</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={
-                            line.priceOverride !== ""
-                              ? line.priceOverride
-                              : String(material?.pricePerTon ?? 0)
-                          }
-                          onChange={(e) =>
-                            updateMaterialLine(line.id, { priceOverride: e.target.value })
-                          }
-                          inputMode="decimal"
-                          className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                      <div className="text-sm text-zinc-400">Line Material Cost</div>
-                      <div className="mt-1 text-3xl font-bold text-orange-500">
-                        {money(
-                          (Number(line.tons) || 0) *
-                            (line.priceOverride !== ""
-                              ? Number(line.priceOverride) || 0
-                              : material?.pricePerTon || 0)
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                onClick={addMaterialLine}
-                className="rounded-2xl bg-orange-500 text-black hover:bg-orange-400"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Material Line
-              </Button>
-            </div>
-
-            <Card className="rounded-3xl border-zinc-800 bg-zinc-900/80 shadow-2xl shadow-black/20">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg text-white">
-                  <Calculator className="h-5 w-5 text-orange-500" />
-                  Total
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                  <div>
-                    <Label className="text-base text-zinc-200">Apply Sales Tax</Label>
-                    <p className="text-sm text-zinc-400">
-                      Using saved tax rate: {taxRate}%
-                    </p>
-                  </div>
-                  <Switch checked={applyTax} onCheckedChange={setApplyTax} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-sm text-zinc-300">
-                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                    <div className="text-zinc-400">Total Loads</div>
-                    <div className="mt-1 text-xl font-semibold">{calc.totalLoads}</div>
-                  </div>
-
-                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                    <div className="text-zinc-400">Total Tons</div>
-                    <div className="mt-1 text-xl font-semibold">{calc.totalTons}</div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-sm text-zinc-300">
-                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                    <div className="text-zinc-400">Haul Per Load</div>
-                    <div className="mt-1 text-xl font-semibold">{money(calc.haulPerLoad)}</div>
-                  </div>
-
-                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                    <div className="text-zinc-400">Total Haul Bill</div>
-                    <div className="mt-1 text-xl font-semibold">{money(calc.haulBill)}</div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-sm text-zinc-300">
-                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                    <div className="text-zinc-400">Material Subtotal</div>
-                    <div className="mt-1 text-xl font-semibold">
-                      {money(calc.materialSubtotal)}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
-                    <div className="text-zinc-400">Tax</div>
-                    <div className="mt-1 text-xl font-semibold">{money(calc.taxAmount)}</div>
-                  </div>
-                </div>
-
-                <div className="rounded-3xl bg-gradient-to-br from-orange-500 to-orange-600 p-5 text-black shadow-xl">
-                  <div className="text-sm font-medium opacity-80">Delivered Price Quote</div>
-                  <div className="mt-1 text-4xl font-black tracking-tight">
-                    {money(calc.grandTotal)}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-3xl border-orange-500/20 bg-zinc-900/80 shadow-2xl shadow-black/20">
-              <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:space-y-0">
-                <div>
-                  <CardTitle className="text-lg text-white">Customer Snapshot</CardTitle>
-                  <p className="text-sm text-zinc-400">
-                    Open the clean view for an easy screenshot.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  onClick={() => setSnapshotMode(true)}
-                  className="rounded-2xl bg-orange-500 text-black hover:bg-orange-400"
-                >
-                  <Expand className="mr-2 h-4 w-4" />
-                  View Snapshot
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <SnapshotCard />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="archive" className="space-y-4">
-            <Card className="rounded-3xl border-zinc-800 bg-zinc-900/80 shadow-2xl shadow-black/20">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg text-white">
-                  <Archive className="h-5 w-5 text-orange-500" />
-                  Saved Quotes
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {savedQuotes.length === 0 ? (
-                  <div className="rounded-2xl bg-zinc-950 p-4 text-sm text-zinc-400 ring-1 ring-zinc-800">
-                    No saved quotes yet.
-                  </div>
-                ) : (
-                  savedQuotes.map((quote) => (
-                    <div
-                      key={quote.id}
-                      className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"
-                    >
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div>
-                          <div className="text-lg font-semibold text-white">
-                            {quote.customerName}
-                          </div>
-                          <div className="text-sm text-zinc-400">
-                            {quote.summary}
-                          </div>
-                          <div className="mt-1 text-xs text-zinc-500">
-                            Saved {formatDateTime(quote.savedAt)}
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col gap-2 md:items-end">
-                          <div className="text-xl font-bold text-orange-500">
-                            {money(quote.grandTotal)}
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => loadQuote(quote)}
-                              className="rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
-                            >
-                              <FolderOpen className="mr-2 h-4 w-4" />
-                              Load
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => deleteQuote(quote.id)}
-                              className="rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="setup" className="space-y-4">
-            <Card className="rounded-3xl border-zinc-800 bg-zinc-900/80">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                <CardTitle className="flex items-center gap-2 text-lg text-white">
-                  <Settings2 className="h-5 w-5 text-orange-500" />
-                  Defaults
-                </CardTitle>
-                <Button
-                  onClick={resetSavedData}
-                  type="button"
-                  variant="outline"
-                  className="rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
-                >
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  Reset Saved Data
-                </Button>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div>
-                  <Label className="text-zinc-200">Default Hourly Rate</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={hourlyRate}
-                    onChange={(e) => setHourlyRate(e.target.value)}
-                    inputMode="decimal"
-                    className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-zinc-200">Default Tax Rate %</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={taxRate}
-                    onChange={(e) => setTaxRate(e.target.value)}
-                    inputMode="decimal"
-                    className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-zinc-200">Truck Capacity Tons</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={truckCapacity}
-                    onChange={(e) => setTruckCapacity(e.target.value)}
-                    inputMode="decimal"
-                    className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="flex justify-end">
-              <Button
-                onClick={addQuarry}
-                type="button"
-                className="rounded-2xl bg-orange-500 text-black hover:bg-orange-400"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Quarry
-              </Button>
-            </div>
-
-            {quarries.map((quarry) => (
-              <Card
-                key={quarry.id}
-                id={`quarry-card-${quarry.id}`}
-                className="rounded-3xl border border-zinc-800 bg-zinc-900/80"
-              >
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg text-white">
-                    <Mountain className="h-5 w-5 text-orange-500" />
-                    Quarry
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label className="text-zinc-200">Quarry Name</Label>
-                    <Input
-                      value={quarry.name}
-                      onChange={(e) => updateQuarryName(quarry.id, e.target.value)}
-                      className="mt-2 rounded-2xl border-zinc-700 bg-zinc-950 text-white"
-                    />
-                  </div>
-
-                  <div className="space-y-3">
-                    {quarry.materials.map((material) => (
-                      <div
-                        key={material.id}
-                        className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"
-                      >
-                        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                          <div>
-                            <Label className="text-zinc-200">Material</Label>
-                            <Input
-                              value={material.name}
-                              onChange={(e) =>
-                                updateMaterial(quarry.id, material.id, {
-                                  name: e.target.value,
-                                })
-                              }
-                              className="mt-2 rounded-2xl border-zinc-700 bg-zinc-900 text-white"
-                            />
-                          </div>
-
-                          <div>
-                            <Label className="text-zinc-200">Price / Ton</Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={material.pricePerTon}
-                              onChange={(e) =>
-                                updateMaterial(quarry.id, material.id, {
-                                  pricePerTon: Number(e.target.value) || 0,
-                                })
-                              }
-                              inputMode="decimal"
-                              className="mt-2 rounded-2xl border-zinc-700 bg-zinc-900 text-white"
-                            />
-                          </div>
-
-                          <div className="flex items-end justify-between rounded-2xl bg-zinc-900 p-4 ring-1 ring-zinc-800">
-                            <div>
-                              <Label className="text-zinc-200">Taxable</Label>
-                              <p className="text-xs text-zinc-400">Material tax toggle</p>
-                            </div>
-                            <Switch
-                              checked={material.taxable}
-                              onCheckedChange={(checked) =>
-                                updateMaterial(quarry.id, material.id, { taxable: checked })
-                              }
-                            />
-                          </div>
-
-                          <div className="flex items-end">
-                            <Button
-                              variant="outline"
-                              onClick={() => removeMaterial(quarry.id, material.id)}
-                              type="button"
-                              className="w-full rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Remove
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <Button
-                    variant="secondary"
-                    onClick={() => addMaterial(quarry.id)}
-                    type="button"
-                    className="rounded-2xl bg-zinc-800 text-white hover:bg-zinc-700"
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Material
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </TabsContent>
-        </Tabs>
-
-        <div className="mt-10 text-center text-xs text-zinc-500">
-          Powered by <span className="font-semibold text-orange-500">QuoteSnap Tools</span>
-        </div>
-      </div>
+        <TabsContent value="setup">
+          <Input value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} placeholder="Hourly Rate" />
+          <Input value={truckCapacity} onChange={(e) => setTruckCapacity(e.target.value)} placeholder="Truck Capacity" />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
