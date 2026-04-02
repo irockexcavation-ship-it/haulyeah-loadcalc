@@ -30,6 +30,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+declare global {
+  interface Window {
+    gtag?: (...args: any[]) => void;
+  }
+}
+
 type Material = {
   id: string;
   name: string;
@@ -126,6 +132,15 @@ export default function HaulYeahLoadCalcApp() {
   const [savedQuotes, setSavedQuotes] = useState<SavedQuote[]>([]);
 
   const customerInputRef = useRef<HTMLInputElement | null>(null);
+
+  const trackEvent = (eventName: string, params?: Record<string, unknown>) => {
+    if (typeof window !== "undefined" && typeof window.gtag === "function") {
+      window.gtag("event", eventName, {
+        app: "haulyeah",
+        ...params,
+      });
+    }
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -278,6 +293,7 @@ export default function HaulYeahLoadCalcApp() {
 
   const addMaterialLine = () => {
     setMaterialLines((prev) => [...prev, makeLine(quarries)]);
+    trackEvent("material_line_added", { line_count: materialLines.length + 1 });
   };
 
   const removeMaterialLine = (lineId: string) => {
@@ -291,6 +307,7 @@ export default function HaulYeahLoadCalcApp() {
   };
 
   const clearForNewCustomer = () => {
+    trackEvent("new_customer_started");
     setCustomerName("");
     setHoursPerLoad("1.7");
     setApplyTax(true);
@@ -395,9 +412,15 @@ export default function HaulYeahLoadCalcApp() {
     };
 
     setSavedQuotes((prev) => [quote, ...prev]);
+    trackEvent("quote_saved", {
+      customer_name: quote.customerName,
+      total: quote.total,
+      material_line_count: quote.materialLines.length,
+    });
   };
 
   const loadQuote = (quote: SavedQuote) => {
+    trackEvent("quote_loaded", { customer_name: quote.customerName, total: quote.total });
     setCustomerName(quote.customerName);
     setHoursPerLoad(quote.hoursPerLoad);
     setApplyTax(quote.applyTax);
@@ -407,6 +430,7 @@ export default function HaulYeahLoadCalcApp() {
 
   const deleteQuote = (quoteId: string) => {
     setSavedQuotes((prev) => prev.filter((q) => q.id !== quoteId));
+    trackEvent("quote_deleted");
   };
 
   const SnapshotCard = ({ fullScreen = false }: { fullScreen?: boolean }) => (
@@ -477,7 +501,10 @@ export default function HaulYeahLoadCalcApp() {
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <Button
               type="button"
-              onClick={() => setSnapshotMode(false)}
+              onClick={() => {
+                setSnapshotMode(false);
+                trackEvent("snapshot_closed");
+              }}
               variant="outline"
               className="rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
             >
@@ -849,7 +876,10 @@ export default function HaulYeahLoadCalcApp() {
                 </div>
                 <Button
                   type="button"
-                  onClick={() => setSnapshotMode(true)}
+                  onClick={() => {
+                    setSnapshotMode(true);
+                    trackEvent("snapshot_opened", { total: calc.grandTotal });
+                  }}
                   className="rounded-2xl bg-orange-500 text-black hover:bg-orange-400"
                 >
                   <Expand className="mr-2 h-4 w-4" />
