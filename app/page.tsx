@@ -15,6 +15,8 @@ import {
   Save,
   Archive,
   FolderOpen,
+  CheckCircle2,
+  Circle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,12 +31,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-declare global {
-  interface Window {
-    gtag?: (...args: any[]) => void;
-  }
-}
 
 type Material = {
   id: string;
@@ -66,6 +62,7 @@ type SavedQuote = {
   materialLines: MaterialLine[];
   total: number;
   summary: string;
+  paid: boolean;
 };
 
 const initialQuarries: Quarry[] = [
@@ -89,7 +86,7 @@ const initialQuarries: Quarry[] = [
 ];
 
 const STORAGE_KEY = "haulyeah-loadcalc-data-v4";
-const ARCHIVE_KEY = "haulyeah-loadcalc-archive-v2";
+const ARCHIVE_KEY = "haulyeah-loadcalc-archive-v3";
 const QUICK_TON_OPTIONS = [10, 15, 20, 25, 30];
 
 const money = (value: number) =>
@@ -133,15 +130,6 @@ export default function HaulYeahLoadCalcApp() {
 
   const customerInputRef = useRef<HTMLInputElement | null>(null);
 
-  const trackEvent = (eventName: string, params?: Record<string, unknown>) => {
-    if (typeof window !== "undefined" && typeof window.gtag === "function") {
-      window.gtag("event", eventName, {
-        app: "haulyeah",
-        ...params,
-      });
-    }
-  };
-
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -168,7 +156,14 @@ export default function HaulYeahLoadCalcApp() {
     if (archived) {
       try {
         const data = JSON.parse(archived);
-        if (Array.isArray(data)) setSavedQuotes(data);
+        if (Array.isArray(data)) {
+          setSavedQuotes(
+            data.map((quote) => ({
+              ...quote,
+              paid: Boolean(quote.paid),
+            }))
+          );
+        }
       } catch (error) {
         console.error("Failed to load archive", error);
       }
@@ -293,7 +288,6 @@ export default function HaulYeahLoadCalcApp() {
 
   const addMaterialLine = () => {
     setMaterialLines((prev) => [...prev, makeLine(quarries)]);
-    trackEvent("material_line_added", { line_count: materialLines.length + 1 });
   };
 
   const removeMaterialLine = (lineId: string) => {
@@ -307,7 +301,6 @@ export default function HaulYeahLoadCalcApp() {
   };
 
   const clearForNewCustomer = () => {
-    trackEvent("new_customer_started");
     setCustomerName("");
     setHoursPerLoad("1.7");
     setApplyTax(true);
@@ -409,18 +402,13 @@ export default function HaulYeahLoadCalcApp() {
       materialLines: materialLines.map((line) => ({ ...line })),
       total: calc.grandTotal,
       summary: buildSummary(),
+      paid: false,
     };
 
     setSavedQuotes((prev) => [quote, ...prev]);
-    trackEvent("quote_saved", {
-      customer_name: quote.customerName,
-      total: quote.total,
-      material_line_count: quote.materialLines.length,
-    });
   };
 
   const loadQuote = (quote: SavedQuote) => {
-    trackEvent("quote_loaded", { customer_name: quote.customerName, total: quote.total });
     setCustomerName(quote.customerName);
     setHoursPerLoad(quote.hoursPerLoad);
     setApplyTax(quote.applyTax);
@@ -430,7 +418,12 @@ export default function HaulYeahLoadCalcApp() {
 
   const deleteQuote = (quoteId: string) => {
     setSavedQuotes((prev) => prev.filter((q) => q.id !== quoteId));
-    trackEvent("quote_deleted");
+  };
+
+  const togglePaid = (quoteId: string) => {
+    setSavedQuotes((prev) =>
+      prev.map((q) => (q.id === quoteId ? { ...q, paid: !q.paid } : q))
+    );
   };
 
   const SnapshotCard = ({ fullScreen = false }: { fullScreen?: boolean }) => (
@@ -501,10 +494,7 @@ export default function HaulYeahLoadCalcApp() {
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <Button
               type="button"
-              onClick={() => {
-                setSnapshotMode(false);
-                trackEvent("snapshot_closed");
-              }}
+              onClick={() => setSnapshotMode(false)}
               variant="outline"
               className="rounded-2xl border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
             >
@@ -565,9 +555,9 @@ export default function HaulYeahLoadCalcApp() {
 
           <TabsContent value="calculator" className="space-y-4">
             <Card className="rounded-3xl border-zinc-800 bg-zinc-900/80 shadow-2xl shadow-black/20">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 gap-2">
                 <CardTitle className="text-lg text-white">Customer</CardTitle>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap justify-end">
                   <Button
                     type="button"
                     variant="outline"
@@ -876,10 +866,7 @@ export default function HaulYeahLoadCalcApp() {
                 </div>
                 <Button
                   type="button"
-                  onClick={() => {
-                    setSnapshotMode(true);
-                    trackEvent("snapshot_opened", { total: calc.grandTotal });
-                  }}
+                  onClick={() => setSnapshotMode(true)}
                   className="rounded-2xl bg-orange-500 text-black hover:bg-orange-400"
                 >
                   <Expand className="mr-2 h-4 w-4" />
@@ -909,11 +896,28 @@ export default function HaulYeahLoadCalcApp() {
                   savedQuotes.map((quote) => (
                     <div
                       key={quote.id}
-                      className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"
+                      className={`rounded-2xl border p-4 transition ${
+                        quote.paid
+                          ? "border-green-500/40 bg-zinc-950/60 opacity-80"
+                          : "border-zinc-800 bg-zinc-950"
+                      }`}
                     >
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
-                          <div className="text-lg font-semibold text-white">{quote.customerName}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="text-lg font-semibold text-white">{quote.customerName}</div>
+                            {quote.paid ? (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-green-500/40 bg-green-500/10 px-2 py-1 text-xs text-green-400">
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Paid
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-400">
+                                <Circle className="h-3.5 w-3.5" />
+                                Unpaid
+                              </span>
+                            )}
+                          </div>
                           <div className="text-sm text-zinc-400">{quote.summary}</div>
                           <div className="mt-1 text-xs text-zinc-500">
                             Saved {formatSavedAt(quote.savedAt)}
@@ -922,7 +926,7 @@ export default function HaulYeahLoadCalcApp() {
 
                         <div className="flex flex-col gap-2 md:items-end">
                           <div className="text-xl font-bold text-orange-500">{money(quote.total)}</div>
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap md:justify-end">
                             <Button
                               type="button"
                               variant="outline"
@@ -931,6 +935,23 @@ export default function HaulYeahLoadCalcApp() {
                             >
                               <FolderOpen className="mr-2 h-4 w-4" />
                               Load
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => togglePaid(quote.id)}
+                              className={`rounded-2xl ${
+                                quote.paid
+                                  ? "border-green-500/40 bg-green-500/10 text-green-300 hover:bg-green-500/20"
+                                  : "border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
+                              }`}
+                            >
+                              {quote.paid ? (
+                                <CheckCircle2 className="mr-2 h-4 w-4" />
+                              ) : (
+                                <Circle className="mr-2 h-4 w-4" />
+                              )}
+                              {quote.paid ? "Paid" : "Mark Paid"}
                             </Button>
                             <Button
                               type="button"
